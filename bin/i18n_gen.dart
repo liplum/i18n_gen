@@ -1,9 +1,15 @@
 import 'package:args/args.dart';
+import 'package:i18n_gen/easy_localization/setup.dart';
 
 const String version = '0.0.1';
 
+const commands = [
+  EasyLocalizationCommand(),
+];
+
 ArgParser buildParser() {
-  return ArgParser()
+  final parser = ArgParser();
+  parser
     ..addFlag(
       'help',
       abbr: 'h',
@@ -11,51 +17,48 @@ ArgParser buildParser() {
       help: 'Print this usage information.',
     )
     ..addFlag(
-      'verbose',
-      abbr: 'v',
-      negatable: false,
-      help: 'Show additional command output.',
-    )
-    ..addFlag(
       'version',
       negatable: false,
       help: 'Print the tool version.',
     );
+  return parser;
 }
 
 void printUsage(ArgParser argParser) {
-  print('Usage: dart i18n_gen.dart <flags> [arguments]');
+  print('Usage: dart i18n_gen.dart <command> [arguments]');
   print(argParser.usage);
 }
 
 void main(List<String> arguments) {
-  final ArgParser argParser = buildParser();
+  final parser = buildParser();
+  final command2Parser = <String, ArgParser>{};
+  for (final command in commands) {
+    final commandParser = command.buildParser();
+    parser.addCommand(command.name, commandParser);
+    command2Parser[command.name] = commandParser;
+  }
   try {
-    final ArgResults results = argParser.parse(arguments);
-    bool verbose = false;
-
+    final results = parser.parse(arguments);
     // Process the parsed arguments.
     if (results.flag('help')) {
-      printUsage(argParser);
+      printUsage(parser);
       return;
     }
     if (results.flag('version')) {
       print('i18n_gen version: $version');
       return;
     }
-    if (results.flag('verbose')) {
-      verbose = true;
-    }
-
-    // Act on the arguments provided.
-    print('Positional arguments: ${results.rest}');
-    if (verbose) {
-      print('[VERBOSE] All arguments: ${results.arguments}');
+    final command = results.command;
+    if (command != null) {
+      commands.firstWhere((cmd) => cmd.name == command.name).handle(
+            command2Parser[command.name]!,
+            command,
+          );
     }
   } on FormatException catch (e) {
     // Print usage information if an invalid argument was provided.
     print(e.message);
     print('');
-    printUsage(argParser);
+    printUsage(parser);
   }
 }
