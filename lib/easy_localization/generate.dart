@@ -59,12 +59,13 @@ const _preservedKeywords = [
   'female',
 ];
 
-String _generateDartFile(Map<String, dynamic> l10nData, GenerateOptions options) {
+String _generateDartFile(Map<dynamic, dynamic> l10nData, GenerateOptions options) {
   final result = StringBuffer();
 
   result.write('''
 // ignore_for_file: type=lint
 import "package:easy_localization/easy_localization.dart";
+
 ''');
 
   final rootNode = Node.build(l10nData);
@@ -75,28 +76,110 @@ import "package:easy_localization/easy_localization.dart";
     result.write(
       "class $className {\n",
     );
-    result.write("const $className();");
+    result.write("  const $className();\n");
 
-    for (final subNode in node.children) {
-      if (subNode is ValueNode) {
-        result.write('String get ${subNode.key} => "${subNode.keyPath}".tr();');
-      } else if (subNode is ObjectNode) {
-        result.write("final ${subNode.key} = const ${subNode.buildClassName()}();");
-      }
+    final subObjectNodes = node.children.whereType<ObjectNode>();
+
+    if (subObjectNodes.isNotEmpty) {
+      result.write("\n");
+    }
+    for (final subNode in subObjectNodes) {
+      final variableName = subNode.toVariableName();
+      result.write("  final $variableName = const ${subNode.buildClassName()}();\n");
+    }
+    final subValueNodes = node.children.whereType<ValueNode>().toList();
+    if (subValueNodes.isNotEmpty) {
+      result.write("\n");
     }
 
-    result.write("}");
+    for (var i = 0; i < subValueNodes.length; ++i) {
+      final subNode = subValueNodes[i];
+      final variableName = subNode.toVariableName();
+      result.write('  String get $variableName => r"${subNode.keyPath}".tr();\n');
+      if (i < subValueNodes.length - 1) {
+        result.write("\n");
+      }
+    }
+    result.write("}\n");
+    result.write("\n");
   }
 
   return result.toString();
 }
 
+const _dartKeywords = {
+  "abstract",
+  "as",
+  "assert",
+  "async",
+  "await",
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "covariant",
+  "default",
+  "deferred",
+  "do",
+  "dynamic",
+  "else",
+  "enum",
+  "extends",
+  "extension",
+  "external",
+  "factory",
+  "false",
+  "final",
+  "finally",
+  "for",
+  "Function",
+  "get",
+  "hide",
+  "if",
+  "implements",
+  "import",
+  "in",
+};
+
 extension on String {
-  String toPascalCase() => split('_').map((e) {
-        if (e.isEmpty) return '';
-        if (e.length == 1) return e.toUpperCase();
-        return '${e[0].toUpperCase()}${e.substring(1).toLowerCase()}';
-      }).join('');
+  bool isValidVariableName() {
+    if (_dartKeywords.contains(this)) return false;
+    if (int.tryParse(this) != null) return false;
+    if (double.tryParse(this) != null) return false;
+    return true;
+  }
+
+  String toPascalCase() {
+    final parts = split(RegExp(r'[-_]'));
+    final capitalized = parts.map((part) {
+      if (part.isEmpty) return '';
+      return part
+          .split('')
+          .mapIndexed((index, char) => switch (index) {
+                0 => char.toUpperCase(),
+                _ => !char.isUpperCase ? char.toLowerCase() : char,
+              })
+          .join();
+    });
+
+    return capitalized.join('');
+  }
+
+  String toCamelCase() {
+    if (isEmpty) return '';
+    final pascalCase = toPascalCase();
+    if (pascalCase.length == 1) {
+      return pascalCase.toLowerCase();
+    } else {
+      return '${pascalCase[0].toLowerCase()}${pascalCase.substring(1)}';
+    }
+  }
+
+  bool get isUpperCase {
+    return toUpperCase() == this;
+  }
 }
 
 sealed class Node {
@@ -110,23 +193,28 @@ sealed class Node {
 
   String get key => keys.last;
 
+  String toVariableName() {
+    final result = key.toCamelCase();
+    if (!result.isValidVariableName()) return "\$$result";
+    return result;
+  }
+
   String get keyPath => keys.join(".");
 
   bool get isRoot => parent == null;
 
-  static Node build(Map<String, dynamic> obj) {
+  static Node build(Map<dynamic, dynamic> obj) {
     final root = ObjectNode(keys: const []);
-    void process(Map<String, dynamic> currentObj, Node currentNode, List<String> currentKeys) {
+    void process(Map<dynamic, dynamic> currentObj, ObjectNode currentNode, List<String> currentKeys) {
       for (final entry in currentObj.entries) {
-        final newKeys = [...currentKeys, entry.key];
-        if (entry.value is Map<String, dynamic>) {
-          final childNode = ObjectNode(parent: currentNode as ObjectNode, keys: newKeys);
-          currentNode.asObjectNode.children.add(childNode);
-          process(entry.value, childNode as Node, newKeys);
+        final newKeys = [...currentKeys, "${entry.key}"];
+        if (entry.value is Map) {
+          final childNode = ObjectNode(parent: currentNode, keys: newKeys);
+          currentNode.children.add(childNode);
+          process(entry.value, childNode, newKeys);
         } else if (entry.value is String) {
-          final childNode = ValueNode(parent: currentNode as ObjectNode, keys: newKeys, value: entry.value);
-          currentNode.asObjectNode.children.add(childNode);
-          currentNode.children.add(ObjectNode(parent: currentNode, keys: newKeys));
+          final childNode = ValueNode(parent: currentNode, keys: newKeys, value: entry.value);
+          currentNode.children.add(childNode);
         }
       }
     }
@@ -160,6 +248,9 @@ sealed class Node {
     process(this);
     return result;
   }
+
+  @override
+  String toString() => keyPath;
 }
 
 class ValueNode extends Node {
@@ -181,14 +272,7 @@ class ObjectNode extends Node {
   });
 
   String buildClassName([String prefix = "I18n"]) {
-    return "$prefix${keys.map((it) => it.toPascalCase()).join("\$")}";
+    if (keys.isEmpty) return prefix;
+    return "$prefix\$${keys.map((it) => it.toPascalCase()).join("\$")}";
   }
-}
-
-extension _NodeExtension on Node {
-  ObjectNode get asObjectNode => this as ObjectNode;
-
-  ValueNode get asValueNode => this as ValueNode;
-
-  bool get isValue => this is ValueNode;
 }
