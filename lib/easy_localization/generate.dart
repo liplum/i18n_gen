@@ -63,44 +63,15 @@ const _preservedKeywords = [
 String _generateDartFile(Map<String, dynamic> l10nData, GenerateOptions options) {
   final result = StringBuffer();
 
+  result.write('''
+// ignore_for_file: type=lint
+import "package:easy_localization/easy_localization.dart";
+  
+class I18n {
+  
+}
+''');
 
 
   return result.toString();
-}
-
-Future _writeJson(StringBuffer classBuilder, List<FileSystemEntity> files) async {
-  var gFile = '''
-// DO NOT EDIT. This is code generated via package:easy_localization/generate.dart
-
-// ignore_for_file: prefer_single_quotes, avoid_renaming_method_parameters, constant_identifier_names
-
-import 'dart:ui';
-
-import 'package:easy_localization/easy_localization.dart' show AssetLoader;
-
-class CodegenLoader extends AssetLoader{
-  const CodegenLoader();
-
-  @override
-  Future<Map<String, dynamic>?> load(String path, Locale locale) {
-    return Future.value(mapLocales[locale.toString()]);
-  }
-
-  ''';
-
-  final listLocales = [];
-
-  for (var file in files) {
-    final localeName = path.basename(file.path).replaceFirst('.json', '').replaceAll('-', '_');
-    listLocales.add('"$localeName": _$localeName');
-    final fileData = File(file.path);
-
-    Map<String, dynamic>? data = json.decode(await fileData.readAsString());
-
-    final mapString = const JsonEncoder.withIndent('  ').convert(data);
-    gFile += 'static const Map<String,dynamic> _$localeName = $mapString;\n';
-  }
-
-  gFile += 'static const Map<String, Map<String,dynamic>> mapLocales = {${listLocales.join(', ')}};';
-  classBuilder.writeln(gFile);
 }
