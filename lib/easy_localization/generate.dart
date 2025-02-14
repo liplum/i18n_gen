@@ -2,15 +2,21 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:collection/collection.dart';
+import 'package:i18n_gen/parser/json.dart';
+import 'package:i18n_gen/parser/yaml.dart';
+import 'package:i18n_gen/project.dart';
 import 'package:path/path.dart' as path;
 
 class GenerateOptions {
   final String sourceDir;
   final String outputFile;
+  final ProjectFileType? projectFileType;
 
   const GenerateOptions({
     required this.sourceDir,
     required this.outputFile,
+    this.projectFileType,
   });
 }
 
@@ -23,24 +29,24 @@ Future<void> generate(GenerateOptions options) async {
     return;
   }
 
-  var files = await dirContents(sourcePath);
-  if (options.sourceFile != null) {
-    final sourceFile = File(path.join(sourceDir.path, options.sourceFile));
-    if (!await sourceFile.exists()) {
-      stderr.writeln('Source file does not exist (${sourceFile.toString()})');
-      return;
-    }
-    files = [sourceFile];
-  } else {
-    //filtering format
-    files = files.where((f) => f.path.contains('.json')).toList();
+  final files = (await sourceDir.list().toList()).whereType<File>();
+  final type = options.projectFileType ??
+      await ProjectFileType.estimateFromFiles(files.map((it) => it.path).toList()) ??
+      ProjectFileType.json;
+  final parser = switch (type) {
+    ProjectFileType.json => const L10nParserJson(),
+    ProjectFileType.yaml => const L10nParserYaml(),
+  };
+  final file =
+      files.firstWhereOrNull((it) => path.basenameWithoutExtension(it.path).contains("en")) ?? files.firstOrNull;
+  if (file == null || !file.existsSync()) {
+    stderr.writeln('No source file found');
+    return;
   }
-
-  if (files.isNotEmpty) {
-    generateFile(files, outputPath, options);
-  } else {
-    stderr.writeln('Source path empty');
-  }
+  final l10nData = parser.parseNestedObject(await file.readAsString());
+  final result = _generateDartFile(l10nData, options);
+  final generatedFile = File(outputPath.path);
+  await generatedFile.writeAsString(result);
 }
 
 const _preservedKeywords = [
@@ -54,94 +60,12 @@ const _preservedKeywords = [
   'female',
 ];
 
-Future<List<FileSystemEntity>> dirContents(Directory dir) {
-  var files = <FileSystemEntity>[];
-  var completer = Completer<List<FileSystemEntity>>();
-  var lister = dir.list(recursive: false);
-  lister.listen((file) => files.add(file), onDone: () => completer.complete(files));
-  return completer.future;
-}
+String _generateDartFile(Map<String, dynamic> l10nData, GenerateOptions options) {
+  final result = StringBuffer();
 
-void generateFile(List<FileSystemEntity> files, Directory outputPath, GenerateOptions options) async {
-  var generatedFile = File(outputPath.path);
-  if (!generatedFile.existsSync()) {
-    generatedFile.createSync(recursive: true);
-  }
 
-  var classBuilder = StringBuffer();
 
-  switch (options.format) {
-    case 'json':
-      await _writeJson(classBuilder, files);
-      break;
-    case 'keys':
-      await _writeKeys(classBuilder, files, options.skipUnnecessaryKeys);
-      break;
-    // case 'csv':
-    //   await _writeCsv(classBuilder, files);
-    // break;
-    default:
-      stderr.writeln('Format not supported');
-  }
-
-  classBuilder.writeln('}');
-  generatedFile.writeAsStringSync(classBuilder.toString());
-
-  stdout.writeln('All done! File generated in ${outputPath.path}');
-}
-
-Future _writeKeys(StringBuffer classBuilder, List<FileSystemEntity> files, bool? skipUnnecessaryKeys) async {
-  var file = '''
-// DO NOT EDIT. This is code generated via package:easy_localization/generate.dart
-
-// ignore_for_file: constant_identifier_names
-
-abstract class  LocaleKeys {
-''';
-
-  final fileData = File(files.first.path);
-
-  Map<String, dynamic> translations = json.decode(await fileData.readAsString());
-
-  file += _resolve(translations, skipUnnecessaryKeys);
-
-  classBuilder.writeln(file);
-}
-
-String _resolve(Map<String, dynamic> translations, bool? skipUnnecessaryKeys, [String? accKey]) {
-  var fileContent = '';
-
-  final sortedKeys = translations.keys.toList();
-
-  final canIgnoreKeys = skipUnnecessaryKeys == true;
-
-  bool containsPreservedKeywords(Map<String, dynamic> map) =>
-      map.keys.any((element) => _preservedKeywords.contains(element));
-
-  for (var key in sortedKeys) {
-    var ignoreKey = false;
-    if (translations[key] is Map) {
-      // If key does not contain keys for plural(), gender() etc. and option is enabled -> ignore it
-      ignoreKey = !containsPreservedKeywords(translations[key] as Map<String, dynamic>) && canIgnoreKeys;
-
-      var nextAccKey = key;
-      if (accKey != null) {
-        nextAccKey = '$accKey.$key';
-      }
-
-      fileContent += _resolve(translations[key], skipUnnecessaryKeys, nextAccKey);
-    }
-
-    if (!_preservedKeywords.contains(key)) {
-      accKey != null && !ignoreKey
-          ? fileContent += '  static const ${accKey.replaceAll('.', '_')}_$key = \'$accKey.$key\';\n'
-          : !ignoreKey
-              ? fileContent += '  static const $key = \'$key\';\n'
-              : null;
-    }
-  }
-
-  return fileContent;
+  return result.toString();
 }
 
 Future _writeJson(StringBuffer classBuilder, List<FileSystemEntity> files) async {
@@ -180,23 +104,3 @@ class CodegenLoader extends AssetLoader{
   gFile += 'static const Map<String, Map<String,dynamic>> mapLocales = {${listLocales.join(', ')}};';
   classBuilder.writeln(gFile);
 }
-
-// _writeCsv(StringBuffer classBuilder, List<FileSystemEntity> files) async {
-//   List<String> listLocales = List();
-//   final fileData = File(files.first.path);
-
-//   // CSVParser csvParser = CSVParser(await fileData.readAsString());
-
-//   // List listLangs = csvParser.getLanguages();
-//   for(String localeName in listLangs){
-//     listLocales.add('"$localeName": $localeName');
-//     String mapString = JsonEncoder.withIndent("  ").convert(csvParser.getLanguageMap(localeName)) ;
-
-//     classBuilder.writeln(
-//       '  static const Map<String,dynamic> $localeName = ${mapString};\n');
-//   }
-
-//   classBuilder.writeln(
-//       '  static const Map<String, Map<String,dynamic>> mapLocales = \{${listLocales.join(', ')}\};');
-
-// }

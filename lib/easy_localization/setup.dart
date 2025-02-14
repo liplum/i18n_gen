@@ -30,14 +30,20 @@ class EasyLocalizationCommand implements Command {
 
     parser.addOption(
       'source-dir',
-      abbr: 'S',
-      help: 'Folder containing localization files',
+      abbr: 's',
+      help: 'The folder containing localization files',
     );
 
     parser.addOption(
       'output-file',
       abbr: 'o',
-      help: 'Output file name',
+      help: 'The output file path',
+    );
+
+    parser.addOption(
+      'source-file-type',
+      abbr: 't',
+      help: 'The file type of source localization files',
     );
     return parser;
   }
