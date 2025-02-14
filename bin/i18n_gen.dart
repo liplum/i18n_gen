@@ -29,7 +29,7 @@ void printUsage(ArgParser argParser) {
   print(argParser.usage);
 }
 
-void main(List<String> arguments) {
+Future<void> main(List<String> arguments) async {
   final parser = buildParser();
   final command2Parser = <String, ArgParser>{};
   for (final command in commands) {
@@ -50,10 +50,11 @@ void main(List<String> arguments) {
     }
     final command = results.command;
     if (command != null) {
-      commands.firstWhere((cmd) => cmd.name == command.name).handle(
-            command2Parser[command.name]!,
-            command,
-          );
+      final matched = commands.firstWhere((cmd) => cmd.name == command.name);
+      await matched.handle(
+        command2Parser[command.name]!,
+        command,
+      );
     }
   } on FormatException catch (e) {
     // Print usage information if an invalid argument was provided.

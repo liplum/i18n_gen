@@ -1,5 +1,10 @@
+import 'dart:io';
+
 import 'package:args/args.dart';
 import 'package:i18n_gen/command.dart';
+import 'package:i18n_gen/easy_localization/generate.dart';
+import 'package:i18n_gen/utils.dart';
+import 'package:path/path.dart' as path;
 
 class EasyLocalizationCommand implements Command {
   const EasyLocalizationCommand();
@@ -22,14 +27,45 @@ class EasyLocalizationCommand implements Command {
         negatable: false,
         help: 'Print the tool version.',
       );
+
+    parser.addOption(
+      'source-dir',
+      abbr: 'S',
+      help: 'Folder containing localization files',
+    );
+
+    parser.addOption(
+      'output-file',
+      abbr: 'o',
+      help: 'Output file name',
+    );
     return parser;
   }
 
   @override
-  void handle(ArgParser parser,ArgResults results) {
+  Future<void> handle(ArgParser parser, ArgResults results) async {
     if (results.flag('help')) {
       print(parser.usage);
       return;
     }
+    var sourceDir = results.option("source-dir");
+    var outputFile = results.option("output-file");
+    final cwd = Directory.current;
+    final pubspec = findPubspecPath(cwd);
+    if (pubspec == null) {
+      if (sourceDir == null || outputFile == null) {
+        throw Exception("No source-dir or output-file given.");
+      }
+    } else {
+      final projectRoot = File(pubspec).parent;
+      sourceDir ??= File(path.join(projectRoot.path, "assets/translations")).path;
+      outputFile ??= File(path.join(projectRoot.path, "lib/generated/l10n.dart")).path;
+    }
+
+    final options = GenerateOptions(
+      outputFile: outputFile,
+      sourceDir: sourceDir,
+    );
+    await generate(options);
   }
 }

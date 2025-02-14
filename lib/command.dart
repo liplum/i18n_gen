@@ -5,5 +5,5 @@ abstract class Command {
 
   ArgParser buildParser();
 
-  void handle(ArgParser parser, ArgResults results);
+  Future<void> handle(ArgParser parser, ArgResults results);
 }
