@@ -105,7 +105,7 @@ import "package:easy_localization/easy_localization.dart";
   return result.toString();
 }
 
-const _dartKeywords = {
+const _preservedDartKeywords = {
   "abstract",
   "as",
   "assert",
@@ -137,13 +137,12 @@ const _dartKeywords = {
   "hide",
   "if",
   "implements",
-  "import",
   "in",
 };
 
 extension on String {
   bool isValidVariableName() {
-    if (_dartKeywords.contains(this)) return false;
+    if (_preservedDartKeywords.contains(this)) return false;
     if (int.tryParse(this) != null) return false;
     if (double.tryParse(this) != null) return false;
     return true;
