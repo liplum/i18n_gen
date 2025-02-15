@@ -84,7 +84,7 @@ import "package:easy_localization/easy_localization.dart";
       result.write("\n");
     }
     for (final subNode in subObjectNodes) {
-      result.write('  ${subNode.buildStatement()};\n');
+      result.write('  ${subNode.buildStatement()}\n');
     }
     final subValueNodes = node.children.whereType<ValueNode>().toList();
     if (subValueNodes.isNotEmpty) {
@@ -93,7 +93,7 @@ import "package:easy_localization/easy_localization.dart";
 
     for (var i = 0; i < subValueNodes.length; ++i) {
       final subNode = subValueNodes[i];
-      result.write('  ${subNode.buildStatement()};\n');
+      result.write('  ${subNode.buildStatement()}\n');
       if (i < subValueNodes.length - 1) {
         result.write("\n");
       }
@@ -304,7 +304,27 @@ class ValueNode extends Node {
     if (namedArgs.isEmpty && positionalArgs == 0) {
       return 'String get ${toVariableName()} => r"$keyPath".tr();';
     }
-    return 'String ${toVariableName()}() => r"$keyPath".tr();';
+    final param = [
+      if (positionalArgs > 0) List.generate(positionalArgs, (i) => "String \$$i").join(","),
+      if (namedArgs.isNotEmpty) "{${namedArgs.map((it) => "required String $it").join(',')}}",
+    ].join(",");
+    final args = [
+      if (positionalArgs > 0) "args: [${List.generate(positionalArgs, (i) => "\$$i").join(",")}]",
+      if (namedArgs.isNotEmpty) "namedArgs: {${namedArgs.map((it) => '"$it": $it').join(',')}}",
+    ].join(",");
+    return 'String ${toVariableName()}($param) => r"$keyPath".tr($args);';
+  }
+
+  @override
+  String toString() {
+    if (namedArgs.isEmpty && positionalArgs == 0) {
+      return keyPath;
+    }
+    final args = [
+      if (positionalArgs > 0) "*$positionalArgs",
+      if (namedArgs.isNotEmpty) "**${namedArgs.join(',')}",
+    ].join(",");
+    return "$keyPath($args)";
   }
 }
 
@@ -346,4 +366,7 @@ class ObjectNode extends Node {
   String buildStatement() {
     return 'final ${toVariableName()} = const ${buildClassName()}();';
   }
+
+  @override
+  String toString() => "$keyPath [${children.map((it) => it.key).join(",")}]";
 }
