@@ -84,8 +84,7 @@ import "package:easy_localization/easy_localization.dart";
       result.write("\n");
     }
     for (final subNode in subObjectNodes) {
-      final variableName = subNode.toVariableName();
-      result.write("  final $variableName = const ${subNode.buildClassName()}();\n");
+      result.write('  ${subNode.buildStatement()};\n');
     }
     final subValueNodes = node.children.whereType<ValueNode>().toList();
     if (subValueNodes.isNotEmpty) {
@@ -94,8 +93,7 @@ import "package:easy_localization/easy_localization.dart";
 
     for (var i = 0; i < subValueNodes.length; ++i) {
       final subNode = subValueNodes[i];
-      final variableName = subNode.toVariableName();
-      result.write('  String get $variableName => r"${subNode.keyPath}".tr();\n');
+      result.write('  ${subNode.buildStatement()};\n');
       if (i < subValueNodes.length - 1) {
         result.write("\n");
       }
@@ -213,7 +211,11 @@ sealed class Node {
           currentNode.children.add(childNode);
           process(entry.value, childNode, newKeys);
         } else if (entry.value is String) {
-          final childNode = ValueNode(parent: currentNode, keys: newKeys, value: entry.value);
+          final childNode = ValueNode.create(
+            parent: currentNode,
+            keys: newKeys,
+            value: entry.value,
+          );
           currentNode.children.add(childNode);
         }
       }
@@ -249,6 +251,8 @@ sealed class Node {
     return result;
   }
 
+  String buildStatement();
+
   @override
   String toString() => keyPath;
 }
@@ -256,11 +260,73 @@ sealed class Node {
 class ValueNode extends Node {
   final String value;
 
+  /// example:
+  /// - `My name is {}.`
+  /// - `I'm { }.`
+  ///
+  /// Whitespaces between brackets are allowed.
+  final int positionalArgs;
+
+  /// example:
+  /// - `My name is {name}.`
+  /// - `I'm {year} years old.`
+  ///
+  /// Whitespace between brackets are allowed.
+  final List<String> namedArgs;
+
   ValueNode({
     super.parent,
     required super.keys,
     required this.value,
+    required this.positionalArgs,
+    required this.namedArgs,
   });
+
+  factory ValueNode.create({
+    ObjectNode? parent,
+    required List<String> keys,
+    required String value,
+  }) {
+    final allArgs = _extractArgs(value);
+    final positionalArgs = allArgs.where((it) => it.name == null).length;
+    final namedArgs = allArgs.where((it) => it.name != null).map((e) => e.name!).toList();
+
+    return ValueNode(
+      keys: keys,
+      value: value,
+      positionalArgs: positionalArgs,
+      namedArgs: namedArgs,
+    );
+  }
+
+  @override
+  String buildStatement() {
+    if (namedArgs.isEmpty && positionalArgs == 0) {
+      return 'String get ${toVariableName()} => r"$keyPath".tr();';
+    }
+    return 'String ${toVariableName()}() => r"$keyPath".tr();';
+  }
+}
+
+class _ParsedArg {
+  final String? name;
+
+  const _ParsedArg(this.name);
+}
+
+List<_ParsedArg> _extractArgs(String value) {
+  final regExp = RegExp(r'\{([\w\s]*?)\}');
+  final matches = regExp.allMatches(value);
+  final result = <_ParsedArg>[];
+  for (final match in matches) {
+    final captureGroup = match.group(1);
+    if (captureGroup != null) {
+      final trimmed = captureGroup.trim();
+      final isNamed = trimmed.isNotEmpty;
+      result.add(_ParsedArg(isNamed ? trimmed : null));
+    }
+  }
+  return result;
 }
 
 class ObjectNode extends Node {
@@ -274,5 +340,10 @@ class ObjectNode extends Node {
   String buildClassName([String prefix = "I18n"]) {
     if (keys.isEmpty) return prefix;
     return "$prefix\$${keys.map((it) => it.toPascalCase()).join("\$")}";
+  }
+
+  @override
+  String buildStatement() {
+    return 'final ${toVariableName()} = const ${buildClassName()}();';
   }
 }
